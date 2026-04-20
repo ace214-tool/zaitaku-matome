@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>在宅メンバー業務まとめ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/encoding-japanese@2.2.0/encoding.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+:root {
+  --g-blue: #4285F4;
+  --g-red: #EA4335;
+  --g-yellow: #FBBC04;
+  --g-green: #34A853;
+  --g-blue-dark: #1a73e8;
+  --g-gray-100: #f8f9fa;
+  --g-gray-200: #e8eaed;
+  --g-gray-300: #dadce0;
+  --g-gray-500: #5f6368;
+  --g-gray-700: #3c4043;
+  --g-gray-900: #202124;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Noto Sans JP', 'Roboto', sans-serif;
+  background: var(--g-gray-100);
+  color: var(--g-gray-900);
+  padding: 24px;
+  min-height: 100vh;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+
+header {
+  background: #ffffff;
+  color: var(--g-gray-900);
+  padding: 28px 32px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(60,64,67,0.08), 0 1px 2px rgba(60,64,67,0.04);
+  border-top: 4px solid var(--g-blue);
+  position: relative;
+  overflow: hidden;
+}
+header::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--g-blue) 0% 25%, var(--g-red) 25% 50%, var(--g-yellow) 50% 75%, var(--g-green) 75% 100%);
+}
+header h1 { font-size: 26px; font-weight: 500; margin-bottom: 6px; color: var(--g-gray-900); letter-spacing: -0.01em; }
+header p { font-size: 14px; color: var(--g-gray-500); }
+
+.upload-zone {
+  display: block;
+  background: white;
+  border: 2px dashed var(--g-gray-300);
+  border-radius: 12px;
+  padding: 48px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 2px rgba(60,64,67,0.04);
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--g-blue);
+  background: #e8f0fe;
+}
+.upload-zone.has-file {
+  padding: 20px 24px;
+  border: 1px solid var(--g-green);
+  background: #e6f4ea;
+}
+.upload-icon { font-size: 44px; margin-bottom: 12px; }
+.upload-text { font-size: 15px; color: var(--g-gray-700); }
+.upload-sub { font-size: 13px; color: var(--g-gray-500); margin-top: 6px; }
+input[type="file"] { display: none; }
+
+.summary {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.summary-card {
+  background: white;
+  padding: 24px 28px;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(60,64,67,0.04);
+  border-left: 4px solid var(--g-blue);
+}
+.summary-card .label { font-size: 13px; color: var(--g-gray-500); margin-bottom: 6px; font-weight: 500; }
+.summary-card .value { font-size: 24px; font-weight: 500; color: var(--g-gray-900); letter-spacing: -0.01em; }
+.summary-card .unit { font-size: 14px; color: var(--g-gray-500); margin-left: 4px; font-weight: 400; }
+
+.card {
+  background: white;
+  padding: 24px 28px;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(60,64,67,0.04);
+  margin-bottom: 20px;
+}
+.card h2 {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 20px;
+  color: var(--g-gray-900);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--g-gray-200);
+  letter-spacing: -0.01em;
+}
+
+.chart-wrap { position: relative; height: 340px; }
+
+table.ranking {
+  width: 100%;
+  border-collapse: collapse;
+}
+table.ranking th, table.ranking td {
+  padding: 14px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--g-gray-200);
+}
+table.ranking th {
+  font-size: 12px;
+  color: var(--g-gray-500);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+table.ranking td { font-size: 14px; color: var(--g-gray-700); }
+table.ranking td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--g-gray-900); }
+table.ranking tr.rank-1 td:first-child::before { content: '🥇 '; }
+table.ranking tr.rank-2 td:first-child::before { content: '🥈 '; }
+table.ranking tr.rank-3 td:first-child::before { content: '🥉 '; }
+table.ranking tr.rank-1 td.num { color: var(--g-blue-dark); }
+
+.hidden { display: none; }
+
+.footer {
+  text-align: center;
+  color: var(--g-gray-500);
+  font-size: 12px;
+  margin-top: 32px;
+  padding: 16px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>📊 在宅メンバー業務まとめ</h1>
+    <p>kintone出力CSVを読み込むと、稼働時間と業務割合を自動集計します</p>
+  </header>
+
+  <label class="upload-zone" id="uploadZone">
+    <div class="upload-icon">📁</div>
+    <div class="upload-text"><strong>CSVファイルをドラッグ＆ドロップ</strong> または クリックして選択</div>
+    <div class="upload-sub">kintone「MEO事務／勤怠登録」のエクスポートCSVに対応</div>
+    <input type="file" id="fileInput" accept=".csv">
+  </label>
+
+  <div id="dashboard" class="hidden">
+    <div class="summary" id="summary"></div>
+
+    <div class="card">
+      <h2>メンバー別・業務内訳</h2>
+      <div class="chart-wrap" style="height:420px;"><canvas id="stackChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2>📝 投稿効率ランキング（1時間あたりの投稿店舗数）</h2>
+      <table class="ranking" id="efficiencyTable">
+        <thead>
+          <tr>
+            <th>メンバー</th>
+            <th class="num">投稿時間(h)</th>
+            <th class="num">投稿店舗数</th>
+            <th class="num">効率(件/h)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer">株式会社Ace / zaitaku-matome v1.0</div>
+</div>
+
+<script>
+Chart.register(ChartDataLabels);
+
+// Google公式カラーをベースに拡張
+const PALETTE = ['#4285F4','#EA4335','#FBBC04','#34A853','#1a73e8','#d93025','#f9ab00','#188038','#669df6','#ee675c','#fcc934','#5bb974'];
+
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const buffer = new Uint8Array(e.target.result);
+    // 文字コード自動判定（Shift-JIS / UTF-8 対応）
+    const detected = Encoding.detect(buffer);
+    const text = Encoding.convert(buffer, { to: 'UNICODE', from: detected, type: 'string' });
+    parseCSV(text, file.name);
+  };
+  reader.readAsArrayBuffer(file);
+  uploadZone.classList.add('has-file');
+  uploadZone.querySelector('.upload-text').innerHTML = `<strong>✅ ${file.name}</strong> 読込完了`;
+}
+
+function parseCSV(text, filename) {
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+  const allRows = parsed.data.filter(r => r['日付'] && r['名前']);
+  if (allRows.length === 0) {
+    alert('CSVに有効な行が見つかりません。ヘッダー列（日付/名前/稼働時間/業務内容）を確認してください。');
+    return;
+  }
+  // 前日1日のみに絞り込み
+  const rows = filterPreviousDay(allRows);
+  if (rows.length === 0) {
+    alert('前日のデータがCSVに含まれていません。エクスポート対象期間を確認してください。');
+    return;
+  }
+  analyze(rows);
+  document.getElementById('dashboard').classList.remove('hidden');
+}
+
+function filterPreviousDay(allRows) {
+  // 今日より前の最新日付を「前日」として抽出
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dateSet = new Set(allRows.map(r => r['日付']));
+  const dates = [...dateSet].map(d => ({ raw: d, ts: parseDate(d).getTime() }))
+    .filter(d => d.ts < today.getTime())
+    .sort((a, b) => b.ts - a.ts);
+  if (dates.length === 0) return [];
+  const targetDate = dates[0].raw;
+  window.__targetDate = targetDate;
+  return allRows.filter(r => r['日付'] === targetDate);
+}
+
+function parseDate(s) {
+  // "2026/04/20" 形式をDate化
+  const [y, m, d] = s.split(/[\/\-]/).map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function parseContent(content) {
+  // 業務内容を ■カテゴリ名 時間 ... の塊に分割し、各カテゴリの時間と配下の店舗数を抽出
+  const lines = content.split(/\r?\n/);
+  const cats = [];
+  let current = null;
+  for (const line of lines) {
+    const m = line.match(/^■\s*([^\s0-9]+[^\s]*?)\s*([0-9]+(?:\.[0-9]+)?)?\s*(?:h|時間)?\s*$/);
+    if (m) {
+      if (current) cats.push(current);
+      current = { name: normalizeCat(m[1]), hours: parseFloat(m[2]) || 0, items: [] };
+    } else if (current) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('■')) {
+        // 店舗名や作業内容。空行・記号のみ行は除外
+        if (!/^[・\-\*\s　]+$/.test(trimmed)) current.items.push(trimmed);
+      }
+    }
+  }
+  if (current) cats.push(current);
+  return cats;
+}
+
+function normalizeCat(name) {
+  // 表記ゆれを統合
+  const n = name.replace(/[（(].*$/, '').trim();
+  if (/^初回/.test(n)) return '初回対応';
+  if (/投稿/.test(n) && /チェック|修正/.test(n) === false) return '投稿';
+  return n;
+}
+
+function analyze(rows) {
+  // メンバー別集計、カテゴリ別集計、投稿効率
+  const memberTotals = {};
+  const catTotals = {};
+  const memberCatTable = {}; // member -> {cat: hours}
+  const postingStats = {}; // member -> {hours, storeCount}
+  const dates = new Set();
+
+  rows.forEach(r => {
+    const name = r['名前'];
+    const hours = parseFloat(r['稼働時間']) || 0;
+    dates.add(r['日付']);
+    memberTotals[name] = (memberTotals[name] || 0) + hours;
+
+    const cats = parseContent(r['業務内容'] || '');
+    memberCatTable[name] = memberCatTable[name] || {};
+    postingStats[name] = postingStats[name] || { hours: 0, storeCount: 0 };
+
+    cats.forEach(c => {
+      catTotals[c.name] = (catTotals[c.name] || 0) + c.hours;
+      memberCatTable[name][c.name] = (memberCatTable[name][c.name] || 0) + c.hours;
+      if (c.name === '投稿') {
+        postingStats[name].hours += c.hours;
+        postingStats[name].storeCount += c.items.length;
+      }
+    });
+  });
+
+  renderSummary(rows);
+  renderStackChart(memberCatTable);
+  renderEfficiencyTable(postingStats);
+}
+
+function renderSummary(rows) {
+  const targetDate = window.__targetDate || rows[0]['日付'];
+  document.getElementById('summary').innerHTML = `
+    <div class="summary-card"><div class="label">集計日（前日）</div><div class="value" style="font-size:22px;">${targetDate}</div></div>
+  `;
+}
+
+let charts = {};
+
+function renderStackChart(memberCatTable) {
+  const members = Object.keys(memberCatTable);
+  const catsSet = new Set();
+  members.forEach(m => Object.keys(memberCatTable[m]).forEach(c => catsSet.add(c)));
+  const cats = [...catsSet];
+  const datasets = cats.map((c, i) => ({
+    label: c,
+    data: members.map(m => memberCatTable[m][c] || 0),
+    backgroundColor: PALETTE[i % PALETTE.length],
+    borderRadius: 4
+  }));
+  if (charts.stack) charts.stack.destroy();
+  charts.stack = new Chart(document.getElementById('stackChart'), {
+    type: 'bar',
+    data: { labels: members, datasets },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        datalabels: {
+          color: '#fff',
+          font: { weight: 'bold', size: 10 },
+          formatter: v => v >= 1 ? v.toFixed(1) : ''
+        }
+      },
+      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#edf2f7' } } }
+    }
+  });
+}
+
+function renderEfficiencyTable(stats) {
+  const rows = Object.entries(stats)
+    .filter(([_, s]) => s.hours > 0)
+    .map(([name, s]) => ({ name, hours: s.hours, count: s.storeCount, rate: s.storeCount / s.hours }))
+    .sort((a, b) => b.rate - a.rate);
+  const tbody = document.querySelector('#efficiencyTable tbody');
+  tbody.innerHTML = rows.map((r, i) => `
+    <tr class="rank-${i + 1}">
+      <td>${r.name}</td>
+      <td class="num">${r.hours.toFixed(1)}</td>
+      <td class="num">${r.count}</td>
+      <td class="num">${r.rate.toFixed(2)}</td>
+    </tr>
+  `).join('');
+}
+</script>
+</body>
+</html>
