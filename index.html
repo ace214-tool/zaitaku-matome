@@ -98,6 +98,26 @@ input[type="file"] { display: none; }
 .summary-card .label { font-size: 13px; color: var(--g-gray-500); margin-bottom: 6px; font-weight: 500; }
 .summary-card .value { font-size: 24px; font-weight: 500; color: var(--g-gray-900); letter-spacing: -0.01em; }
 .summary-card .unit { font-size: 14px; color: var(--g-gray-500); margin-left: 4px; font-weight: 400; }
+.date-select {
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--g-gray-900);
+  background: #fff;
+  border: 1px solid var(--g-gray-300);
+  border-radius: 8px;
+  padding: 6px 36px 6px 12px;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235f6368' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.date-select:hover { border-color: var(--g-blue); }
+.date-select:focus { outline: none; border-color: var(--g-blue); box-shadow: 0 0 0 3px rgba(66,133,244,0.15); }
 
 .card {
   background: white;
@@ -114,6 +134,16 @@ input[type="file"] { display: none; }
   padding-bottom: 12px;
   border-bottom: 1px solid var(--g-gray-200);
   letter-spacing: -0.01em;
+}
+.card-note {
+  font-size: 13px;
+  color: var(--g-gray-700);
+  background: #fef7e0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border-left: 3px solid #FBBC04;
+  line-height: 1.6;
 }
 
 .chart-wrap { position: relative; height: 340px; }
@@ -180,7 +210,7 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
   <div id="screenshotArea">
     <header>
       <h1>📊 在宅メンバー業務まとめ</h1>
-      <p>みなさん、お疲れさまです。前営業日の稼働時間と業務内訳をまとめました。</p>
+      <p>みなさん、おはようございます！<br>本日もよろしくお願いいたします！！</p>
     </header>
 
     <div id="dashboard" class="hidden">
@@ -193,6 +223,7 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
 
       <div class="card">
         <h2>📝 投稿効率（1件あたりの所要時間）</h2>
+        <p class="card-note">💡 内容に間違いがないことを前提に、<strong>平均6〜8分／件</strong> を目安にめざしてみてください！</p>
         <table class="ranking" id="efficiencyTable">
           <thead>
             <tr>
@@ -222,7 +253,7 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
     <input type="file" id="fileInput" accept=".csv">
   </label>
 
-  <div class="footer">株式会社Ace / zaitaku-matome v1.8</div>
+  <div class="footer">株式会社Ace / zaitaku-matome v2.6</div>
 </div>
 
 <script>
@@ -230,10 +261,9 @@ Chart.register(ChartDataLabels);
 
 // Google公式カラーをベースに拡張
 // コアカテゴリ：色とスタック順序を固定
-const CATEGORY_ORDER = ['投稿','中村さん投稿','投稿チェック','サイテーション','インサイト','強化','初回対応','写真対応','口コミ対応','SEO','HP','その他'];
+const CATEGORY_ORDER = ['投稿','投稿チェック','サイテーション','インサイト','強化','初回対応','写真対応','口コミ対応','SEO','HP','その他'];
 const CATEGORY_COLORS = {
   '投稿':         '#EA4335', // 赤
-  '中村さん投稿':  '#C62828', // 暗赤（投稿系の派生）
   '投稿チェック':  '#F48FB1', // ピンク
   'サイテーション': '#FF9800', // オレンジ
   'インサイト':    '#F9A825', // 濃ゴールド
@@ -279,31 +309,37 @@ function parseCSV(text, filename) {
     alert('CSVに有効な行が見つかりません。ヘッダー列（日付/名前/稼働時間/業務内容）を確認してください。');
     return;
   }
-  // 前日1日のみに絞り込み
-  const rows = filterPreviousDay(allRows);
-  if (rows.length === 0) {
+  // グローバル保存（日付切替で再集計するため）
+  window.__allRows = allRows;
+  window.__allMembers = [...new Set(allRows.map(r => r['名前']).filter(Boolean))];
+  // デフォルト日付：前営業日（today未満で最新）
+  const defaultDate = pickPreviousBusinessDay(allRows);
+  if (!defaultDate) {
     alert('前日のデータがCSVに含まれていません。エクスポート対象期間を確認してください。');
     return;
   }
-  // 全期間に出てきた在宅メンバー一覧（前日に稼働していない人も棒グラフに表示するため）
-  const allMembers = [...new Set(allRows.map(r => r['名前']).filter(Boolean))];
-  analyze(rows, allMembers);
+  window.__defaultDate = defaultDate;
+  reanalyze(defaultDate);
   document.getElementById('dashboard').classList.remove('hidden');
   document.getElementById('screenshotBar').classList.remove('hidden');
 }
 
-function filterPreviousDay(allRows) {
-  // 今日より前の最新日付を「前日」として抽出
+function pickPreviousBusinessDay(allRows) {
+  // 今日より前の最新日付を「前営業日」として抽出
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const dateSet = new Set(allRows.map(r => r['日付']));
-  const dates = [...dateSet].map(d => ({ raw: d, ts: parseDate(d).getTime() }))
+  const dates = [...new Set(allRows.map(r => r['日付']))]
+    .map(d => ({ raw: d, ts: parseDate(d).getTime() }))
     .filter(d => d.ts < today.getTime())
     .sort((a, b) => b.ts - a.ts);
-  if (dates.length === 0) return [];
-  const targetDate = dates[0].raw;
+  return dates.length > 0 ? dates[0].raw : null;
+}
+
+function reanalyze(targetDate) {
+  // 集計日を切り替えて再集計
   window.__targetDate = targetDate;
-  return allRows.filter(r => r['日付'] === targetDate);
+  const rows = window.__allRows.filter(r => r['日付'] === targetDate);
+  analyze(rows, window.__allMembers);
 }
 
 function parseDate(s) {
@@ -373,8 +409,8 @@ function normalizeCat(name) {
   n = n.replace(/[\s　]*[0-9]+(?:\.[0-9]+)?[\s　]*h?\s*$/i, '').trim();
   n = n.replace(/[\s　]+h$/i, '').trim();
   if (!n) return 'その他';
-  // 中村さん投稿は「投稿」より先に判定
-  if (/^中村さん投稿/.test(n)) return '中村さん投稿';
+  // 中村さん投稿も投稿として統合
+  if (/^中村さん投稿/.test(n)) return '投稿';
   // モノ系 → 通常カテゴリへ統合
   if (n === 'モノ投稿') return '投稿';
   if (n === 'モノ投稿チェック' || n === 'モノ投稿修正') return '投稿チェック';
@@ -441,10 +477,28 @@ function analyze(rows, allMembers) {
 }
 
 function renderSummary(rows) {
-  const targetDate = window.__targetDate || rows[0]['日付'];
+  const targetDate = window.__targetDate || (rows[0] && rows[0]['日付']);
+  const allRows = window.__allRows || [];
+  const defaultDate = window.__defaultDate;
+  // 全期間の日付一覧（新しい順）
+  const dates = [...new Set(allRows.map(r => r['日付']))]
+    .map(d => ({ raw: d, ts: parseDate(d).getTime() }))
+    .sort((a, b) => b.ts - a.ts);
+  const options = dates.map(d => {
+    const isDefault = d.raw === defaultDate;
+    const sel = d.raw === targetDate ? ' selected' : '';
+    const label = isDefault ? `${d.raw}（前営業日）` : d.raw;
+    return `<option value="${d.raw}"${sel}>${label}</option>`;
+  }).join('');
   document.getElementById('summary').innerHTML = `
-    <div class="summary-card"><div class="label">集計日（前日）</div><div class="value" style="font-size:22px;">${targetDate}</div></div>
+    <div class="summary-card">
+      <div class="label">集計日</div>
+      <select id="dateSelect" class="date-select">${options}</select>
+    </div>
   `;
+  document.getElementById('dateSelect').addEventListener('change', e => {
+    reanalyze(e.target.value);
+  });
 }
 
 let charts = {};
@@ -472,11 +526,26 @@ function renderStackChart(memberCatTable, memberTotals) {
     options: {
       maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'bottom' },
+        legend: {
+          position: 'bottom',
+          labels: { padding: 14, usePointStyle: true, pointStyle: 'rect', boxWidth: 14, boxHeight: 14, font: { size: 12 } }
+        },
         datalabels: {
+          // 白文字＋黒縁取りでどの背景色でも視認性確保
           color: '#fff',
-          font: { weight: 'bold', size: 10 },
-          formatter: v => v >= 1 ? v.toFixed(1) : ''
+          textStrokeColor: '#000',
+          textStrokeWidth: 3,
+          font: {
+            family: "'Noto Sans JP', sans-serif",
+            weight: '700',
+            size: 12
+          },
+          textAlign: 'center',
+          formatter: (v, ctx) => {
+            if (v < 0.5) return '';                              // 0.5h未満は表示しない
+            if (v < 1.5) return v.toFixed(1) + 'h';              // 0.5〜1.5hは時間のみ
+            return [ctx.dataset.label, v.toFixed(1) + 'h'];      // 1.5h以上は項目名+時間
+          }
         }
       },
       scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#edf2f7' } } }
