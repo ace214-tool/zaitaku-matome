@@ -134,11 +134,8 @@ table.ranking th {
   letter-spacing: 0.05em;
 }
 table.ranking td { font-size: 14px; color: var(--g-gray-700); }
-table.ranking td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--g-gray-900); }
-table.ranking tr.rank-1 td:first-child::before { content: '🥇 '; }
-table.ranking tr.rank-2 td:first-child::before { content: '🥈 '; }
-table.ranking tr.rank-3 td:first-child::before { content: '🥉 '; }
-table.ranking tr.rank-1 td.num { color: var(--g-blue-dark); }
+table.ranking th.num, table.ranking td.num { text-align: right; }
+table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; color: var(--g-gray-900); }
 
 .hidden { display: none; }
 
@@ -174,14 +171,14 @@ table.ranking tr.rank-1 td.num { color: var(--g-blue-dark); }
     </div>
 
     <div class="card">
-      <h2>📝 投稿効率ランキング（1時間あたりの投稿店舗数）</h2>
+      <h2>📝 投稿効率（1件あたりの所要時間）</h2>
       <table class="ranking" id="efficiencyTable">
         <thead>
           <tr>
             <th>メンバー</th>
+            <th class="num">効率（分/件）</th>
             <th class="num">投稿時間(h)</th>
             <th class="num">投稿店舗数</th>
-            <th class="num">効率(件/h)</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -189,14 +186,29 @@ table.ranking tr.rank-1 td.num { color: var(--g-blue-dark); }
     </div>
   </div>
 
-  <div class="footer">株式会社Ace / zaitaku-matome v1.0</div>
+  <div class="footer">株式会社Ace / zaitaku-matome v1.7</div>
 </div>
 
 <script>
 Chart.register(ChartDataLabels);
 
 // Google公式カラーをベースに拡張
-const PALETTE = ['#4285F4','#EA4335','#FBBC04','#34A853','#1a73e8','#d93025','#f9ab00','#188038','#669df6','#ee675c','#fcc934','#5bb974'];
+// コアカテゴリ：色とスタック順序を固定
+const CATEGORY_ORDER = ['投稿','中村さん投稿','投稿チェック','サイテーション','インサイト','強化','初回対応','写真対応','口コミ対応','SEO','HP','その他'];
+const CATEGORY_COLORS = {
+  '投稿':         '#EA4335', // 赤
+  '中村さん投稿':  '#C62828', // 暗赤（投稿系の派生）
+  '投稿チェック':  '#F48FB1', // ピンク
+  'サイテーション': '#FF9800', // オレンジ
+  'インサイト':    '#F9A825', // 濃ゴールド
+  '強化':         '#9C27B0', // 紫
+  '初回対応':     '#34A853', // 緑
+  '写真対応':     '#FFD54F', // 山吹
+  '口コミ対応':   '#FFE082', // 淡ゴールド
+  'SEO':         '#4285F4', // 青
+  'HP':          '#4DD0E1', // 水色
+  'その他':       '#9E9E9E'  // 灰色
+};
 
 const uploadZone = document.getElementById('uploadZone');
 const fileInput = document.getElementById('fileInput');
@@ -237,7 +249,9 @@ function parseCSV(text, filename) {
     alert('前日のデータがCSVに含まれていません。エクスポート対象期間を確認してください。');
     return;
   }
-  analyze(rows);
+  // 全期間に出てきた在宅メンバー一覧（前日に稼働していない人も棒グラフに表示するため）
+  const allMembers = [...new Set(allRows.map(r => r['名前']).filter(Boolean))];
+  analyze(rows, allMembers);
   document.getElementById('dashboard').classList.remove('hidden');
 }
 
@@ -263,20 +277,51 @@ function parseDate(s) {
 
 function parseContent(content) {
   // 業務内容を ■カテゴリ名 時間 ... の塊に分割し、各カテゴリの時間と配下の店舗数を抽出
-  const lines = content.split(/\r?\n/);
+  // 表記ゆれ対策：
+  //   - 全角ｈ／全角数字／全角スペースをNFKCで半角化
+  //   - 同レコード内に ■ がある場合 ◎は内訳（サブ）扱い、 ■がない場合 ◎もトップレベル扱い
+  //   - 単位は h / hr / hrs / hour / 時間 / 時 を許容（大文字小文字無視）
+  //   - 「投稿6h」のようなカテゴリ名と時間が連結したケースも救済
+  //   - 「・」「-」「*」始まりはサブカテゴリ見出し → 時間も件数もカウントしない
+  if (!content) return [];
+  const normalized = content.normalize('NFKC');
+  const lines = normalized.split(/\r?\n/);
+
+  // 同レコード内に ■ があるかで ◎ の扱いを切り替える（流派対応）
+  const MAIN = /^[■□▪▫◾◽]\uFE0F?\s*/;
+  const hasMain = lines.some(l => MAIN.test(l.trim()));
+  const TOP_MARKER = hasMain ? MAIN : /^[■□▪▫◾◽◆◇●○◎◯★☆]\uFE0F?\s*/;
+  const SUB_MARKER = hasMain ? /^[・\-\*◎◯◆◇●○★☆]/ : /^[・\-\*]/;
+
+  const NAME_HOURS = /^(.+?)[\s　]*([0-9]+(?:\.[0-9]+)?)\s*(?:h|hr|hrs|hour|時間|時)?\s*$/i;
+  const ONLY_HOUR  = /^([0-9]+(?:\.[0-9]+)?)\s*(?:h|hr|hrs|hour|時間|時)\s*$/i;
+
   const cats = [];
   let current = null;
-  for (const line of lines) {
-    const m = line.match(/^■\s*([^\s0-9]+[^\s]*?)\s*([0-9]+(?:\.[0-9]+)?)?\s*(?:h|時間)?\s*$/);
-    if (m) {
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    if (TOP_MARKER.test(line)) {
       if (current) cats.push(current);
-      current = { name: normalizeCat(m[1]), hours: parseFloat(m[2]) || 0, items: [] };
-    } else if (current) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('■')) {
-        // 店舗名や作業内容。空行・記号のみ行は除外
-        if (!/^[・\-\*\s　]+$/.test(trimmed)) current.items.push(trimmed);
+      const body = line.replace(TOP_MARKER, '');
+      const m = body.match(NAME_HOURS);
+      if (m) {
+        current = { name: normalizeCat(m[1]), hours: parseFloat(m[2]) || 0, items: [] };
+      } else {
+        current = { name: normalizeCat(body), hours: 0, items: [] };
       }
+    } else if (current) {
+      // サブカテゴリ見出しは時間も件数もカウントしない
+      if (SUB_MARKER.test(line)) continue;
+      // 「N h」だけの行は時間として救済
+      const oh = line.match(ONLY_HOUR);
+      if (oh && current.hours === 0) {
+        current.hours = parseFloat(oh[1]);
+        continue;
+      }
+      current.items.push(line);
     }
   }
   if (current) cats.push(current);
@@ -284,20 +329,54 @@ function parseContent(content) {
 }
 
 function normalizeCat(name) {
-  // 表記ゆれを統合
-  const n = name.replace(/[（(].*$/, '').trim();
-  if (/^初回/.test(n)) return '初回対応';
-  if (/投稿/.test(n) && /チェック|修正/.test(n) === false) return '投稿';
-  return n;
+  // コア11カテゴリ：投稿／中村さん投稿／投稿チェック／サイテーション／インサイト／強化／初回対応／写真対応／口コミ対応／SEO／HP
+  // それ以外はすべて「その他」に集約
+  let n = name.normalize('NFKC').replace(/[（(].*$/, '').trim();
+  // 末尾の「N h」「Nh」「N」を保険で除去（パース失敗時の救済）
+  n = n.replace(/[\s　]*[0-9]+(?:\.[0-9]+)?[\s　]*h?\s*$/i, '').trim();
+  n = n.replace(/[\s　]+h$/i, '').trim();
+  if (!n) return 'その他';
+  // 中村さん投稿は「投稿」より先に判定
+  if (/^中村さん投稿/.test(n)) return '中村さん投稿';
+  // モノ系 → 通常カテゴリへ統合
+  if (n === 'モノ投稿') return '投稿';
+  if (n === 'モノ投稿チェック' || n === 'モノ投稿修正') return '投稿チェック';
+  // 投稿系
+  if (n === '投稿修正' || n === '投稿チェック') return '投稿チェック';
+  if (n === '投稿') return '投稿';
+  // 初回
+  if (n === '初回対応' || n === '初回') return '初回対応';
+  // 口コミ（口コミ返信、口コミ返信チェック等を統合）
+  if (/^口コミ/.test(n)) return '口コミ対応';
+  // 写真（写真追加 → 写真対応）
+  if (n === '写真対応' || n === '写真追加') return '写真対応';
+  // 強化（強化案件含む）
+  if (/^強化/.test(n)) return '強化';
+  // インサイト（インサイト4月2回目等含む）
+  if (/^インサイト/.test(n)) return 'インサイト';
+  // サイテーション
+  if (/^サイテーション/.test(n)) return 'サイテーション';
+  // SEO/HP
+  if (/^seo$/i.test(n)) return 'SEO';
+  if (/^hp$/i.test(n)) return 'HP';
+  // 上記以外はすべて「その他」
+  return 'その他';
 }
 
-function analyze(rows) {
+function analyze(rows, allMembers) {
   // メンバー別集計、カテゴリ別集計、投稿効率
   const memberTotals = {};
   const catTotals = {};
   const memberCatTable = {}; // member -> {cat: hours}
   const postingStats = {}; // member -> {hours, storeCount}
   const dates = new Set();
+
+  // 全期間のメンバーを0で初期化（前日に稼働なしの人も棒グラフに出す）
+  (allMembers || []).forEach(m => {
+    memberTotals[m] = 0;
+    memberCatTable[m] = {};
+    postingStats[m] = { hours: 0, storeCount: 0 };
+  });
 
   rows.forEach(r => {
     const name = r['名前'];
@@ -320,7 +399,7 @@ function analyze(rows) {
   });
 
   renderSummary(rows);
-  renderStackChart(memberCatTable);
+  renderStackChart(memberCatTable, memberTotals);
   renderEfficiencyTable(postingStats);
 }
 
@@ -333,21 +412,26 @@ function renderSummary(rows) {
 
 let charts = {};
 
-function renderStackChart(memberCatTable) {
-  const members = Object.keys(memberCatTable);
-  const catsSet = new Set();
-  members.forEach(m => Object.keys(memberCatTable[m]).forEach(c => catsSet.add(c)));
-  const cats = [...catsSet];
-  const datasets = cats.map((c, i) => ({
-    label: c,
-    data: members.map(m => memberCatTable[m][c] || 0),
-    backgroundColor: PALETTE[i % PALETTE.length],
-    borderRadius: 4
-  }));
+function renderStackChart(memberCatTable, memberTotals) {
+  // メンバーを稼働時間が多い順にソート（稼働なしの人も末尾に表示）
+  const members = Object.keys(memberCatTable).sort((a, b) => (memberTotals[b] || 0) - (memberTotals[a] || 0));
+  // 苗字のみ表示。稼働ゼロのメンバーは「(稼働なし)」を改行で添える
+  const labels = members.map(m => (memberTotals[m] || 0) === 0 ? [shortName(m), '(稼働なし)'] : shortName(m));
+
+  // カテゴリは固定順序、ただし全員0のカテゴリはグラフから除外（凡例も出さない）
+  const datasets = CATEGORY_ORDER
+    .map(c => ({
+      label: c,
+      data: members.map(m => memberCatTable[m][c] || 0),
+      backgroundColor: CATEGORY_COLORS[c] || '#cccccc',
+      borderRadius: 4
+    }))
+    .filter(ds => ds.data.some(v => v > 0));
+
   if (charts.stack) charts.stack.destroy();
   charts.stack = new Chart(document.getElementById('stackChart'), {
     type: 'bar',
-    data: { labels: members, datasets },
+    data: { labels, datasets },
     options: {
       maintainAspectRatio: false,
       plugins: {
@@ -364,19 +448,36 @@ function renderStackChart(memberCatTable) {
 }
 
 function renderEfficiencyTable(stats) {
+  // 投稿店舗数が1件以上のメンバーだけ、投稿時間÷件数で「1件あたりの分数」を算出
   const rows = Object.entries(stats)
-    .filter(([_, s]) => s.hours > 0)
-    .map(([name, s]) => ({ name, hours: s.hours, count: s.storeCount, rate: s.storeCount / s.hours }))
-    .sort((a, b) => b.rate - a.rate);
+    .filter(([_, s]) => s.storeCount > 0 && s.hours > 0)
+    .map(([name, s]) => ({
+      name,
+      hours: s.hours,
+      count: s.storeCount,
+      minutesPerItem: (s.hours * 60) / s.storeCount
+    }))
+    // 効率の良い順（分/件が小さい順）にソート
+    .sort((a, b) => a.minutesPerItem - b.minutesPerItem);
   const tbody = document.querySelector('#efficiencyTable tbody');
   tbody.innerHTML = rows.map((r, i) => `
     <tr class="rank-${i + 1}">
-      <td>${r.name}</td>
+      <td>${shortName(r.name)}</td>
+      <td class="num">${r.minutesPerItem.toFixed(1)}</td>
       <td class="num">${r.hours.toFixed(1)}</td>
       <td class="num">${r.count}</td>
-      <td class="num">${r.rate.toFixed(2)}</td>
     </tr>
   `).join('');
+}
+
+// 苗字のみ抽出（漢字2文字を苗字とする簡易ルール）
+function shortName(fullName) {
+  if (!fullName) return '';
+  // スペース区切りがあれば最初の塊を返す
+  const sp = fullName.split(/[\s　]+/);
+  if (sp.length > 1) return sp[0];
+  // それ以外は最初の2文字
+  return fullName.slice(0, 2);
 }
 </script>
 </body>

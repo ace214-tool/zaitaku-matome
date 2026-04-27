@@ -10,3 +10,17 @@ git version 2.53.0.windows.2
 Initialized empty Git repository in C:/Users/User/zaitaku-matome/.git/
 [Step 3] git config... 
 [Step 4] git add . 
+warning: in the working copy of 'index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'setup.cmd', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'setup.log', LF will be replaced by CRLF the next time Git touches it
+[Step 5] git commit... 
+[master (root-commit) 508a451] initial commit: zaitaku-matome v1.0
+ 3 files changed, 519 insertions(+)
+ create mode 100644 index.html
+ create mode 100644 setup.cmd
+ create mode 100644 setup.log
+[Step 6] git branch -M main... 
+[Step 7] git remote add origin... 
+error: No such remote: 'origin'
+[Step 8] git push... 
+Push exit code: 0 
