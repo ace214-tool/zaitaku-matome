@@ -10,6 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/encoding-japanese@2.2.0/encoding.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
 :root {
   --g-blue: #4285F4;
@@ -139,6 +140,31 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
 
 .hidden { display: none; }
 
+/* スクショアクションボタン */
+.screenshot-bar {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 24px 0 16px;
+}
+.screenshot-btn {
+  background: var(--g-blue);
+  color: #fff;
+  border: none;
+  padding: 14px 28px;
+  font-size: 15px;
+  font-weight: 500;
+  font-family: inherit;
+  border-radius: 24px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(60,64,67,0.16), 0 1px 2px rgba(60,64,67,0.08);
+  transition: all 0.2s;
+}
+.screenshot-btn:hover { background: var(--g-blue-dark); box-shadow: 0 2px 6px rgba(60,64,67,0.2); }
+.screenshot-btn:disabled { background: var(--g-gray-300); cursor: not-allowed; }
+.screenshot-btn.success { background: var(--g-green); }
+.screenshot-btn.error { background: var(--g-red); }
+
 .footer {
   text-align: center;
   color: var(--g-gray-500);
@@ -150,11 +176,45 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
 </head>
 <body>
 <div class="container">
-  <header>
-    <h1>📊 在宅メンバー業務まとめ</h1>
-    <p>kintone出力CSVを読み込むと、稼働時間と業務割合を自動集計します</p>
-  </header>
+  <!-- ↓↓↓ スクショ対象エリア ↓↓↓ -->
+  <div id="screenshotArea">
+    <header>
+      <h1>📊 在宅メンバー業務まとめ</h1>
+      <p>みなさん、お疲れさまです。前営業日の稼働時間と業務内訳をまとめました。</p>
+    </header>
 
+    <div id="dashboard" class="hidden">
+      <div class="summary" id="summary"></div>
+
+      <div class="card">
+        <h2>メンバー別・業務内訳</h2>
+        <div class="chart-wrap" style="height:420px;"><canvas id="stackChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h2>📝 投稿効率（1件あたりの所要時間）</h2>
+        <table class="ranking" id="efficiencyTable">
+          <thead>
+            <tr>
+              <th>メンバー</th>
+              <th class="num">効率（分/件）</th>
+              <th class="num">投稿時間(h)</th>
+              <th class="num">投稿店舗数</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <!-- ↑↑↑ スクショ対象エリアここまで ↑↑↑ -->
+
+  <!-- スクショボタン（スクショ対象外） -->
+  <div id="screenshotBar" class="screenshot-bar hidden">
+    <button class="screenshot-btn" id="screenshotBtn">📸 スクショをコピー</button>
+  </div>
+
+  <!-- CSV読み込みゾーン（スクショ対象外） -->
   <label class="upload-zone" id="uploadZone">
     <div class="upload-icon">📁</div>
     <div class="upload-text"><strong>CSVファイルをドラッグ＆ドロップ</strong> または クリックして選択</div>
@@ -162,31 +222,7 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
     <input type="file" id="fileInput" accept=".csv">
   </label>
 
-  <div id="dashboard" class="hidden">
-    <div class="summary" id="summary"></div>
-
-    <div class="card">
-      <h2>メンバー別・業務内訳</h2>
-      <div class="chart-wrap" style="height:420px;"><canvas id="stackChart"></canvas></div>
-    </div>
-
-    <div class="card">
-      <h2>📝 投稿効率（1件あたりの所要時間）</h2>
-      <table class="ranking" id="efficiencyTable">
-        <thead>
-          <tr>
-            <th>メンバー</th>
-            <th class="num">効率（分/件）</th>
-            <th class="num">投稿時間(h)</th>
-            <th class="num">投稿店舗数</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="footer">株式会社Ace / zaitaku-matome v1.7</div>
+  <div class="footer">株式会社Ace / zaitaku-matome v1.8</div>
 </div>
 
 <script>
@@ -253,6 +289,7 @@ function parseCSV(text, filename) {
   const allMembers = [...new Set(allRows.map(r => r['名前']).filter(Boolean))];
   analyze(rows, allMembers);
   document.getElementById('dashboard').classList.remove('hidden');
+  document.getElementById('screenshotBar').classList.remove('hidden');
 }
 
 function filterPreviousDay(allRows) {
@@ -478,6 +515,58 @@ function shortName(fullName) {
   if (sp.length > 1) return sp[0];
   // それ以外は最初の2文字
   return fullName.slice(0, 2);
+}
+
+// スクショ機能：ボタンクリックでクリップボードコピー（失敗時はダウンロード）
+document.getElementById('screenshotBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('screenshotBtn');
+  const target = document.getElementById('screenshotArea');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ 生成中...';
+  btn.classList.remove('success', 'error');
+  try {
+    const canvas = await html2canvas(target, {
+      scale: 2,                  // 高解像度（Retina対応）
+      backgroundColor: '#f8f9fa', // body背景色
+      useCORS: true,
+      logging: false
+    });
+    const dateStr = (window.__targetDate || new Date().toISOString().slice(0, 10)).replace(/\//g, '-');
+    // クリップボード対応ブラウザならコピー優先
+    if (navigator.clipboard && window.ClipboardItem) {
+      canvas.toBlob(async blob => {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          btn.textContent = '✅ コピーしました！チャットに貼り付けてください';
+          btn.classList.add('success');
+        } catch (err) {
+          // コピー失敗時はダウンロードにフォールバック
+          downloadCanvas(canvas, dateStr);
+          btn.textContent = '✅ ダウンロードしました';
+          btn.classList.add('success');
+        }
+        setTimeout(() => { btn.textContent = originalText; btn.classList.remove('success'); btn.disabled = false; }, 4000);
+      }, 'image/png');
+    } else {
+      // ClipboardItem非対応ブラウザ：ダウンロードのみ
+      downloadCanvas(canvas, dateStr);
+      btn.textContent = '✅ ダウンロードしました';
+      btn.classList.add('success');
+      setTimeout(() => { btn.textContent = originalText; btn.classList.remove('success'); btn.disabled = false; }, 4000);
+    }
+  } catch (err) {
+    btn.textContent = '❌ エラー：' + (err.message || 'スクショに失敗しました');
+    btn.classList.add('error');
+    setTimeout(() => { btn.textContent = originalText; btn.classList.remove('error'); btn.disabled = false; }, 4000);
+  }
+});
+
+function downloadCanvas(canvas, dateStr) {
+  const link = document.createElement('a');
+  link.download = `zaitaku-matome-${dateStr}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
 }
 </script>
 </body>
