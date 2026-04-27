@@ -34,6 +34,8 @@ body {
   min-height: 100vh;
 }
 .container { max-width: 1200px; margin: 0 auto; }
+@media (min-width: 1400px) { .container { max-width: 1320px; } }
+@media (min-width: 1800px) { .container { max-width: 1500px; } }
 
 header {
   background: #ffffff;
@@ -147,6 +149,9 @@ input[type="file"] { display: none; }
 }
 
 .chart-wrap { position: relative; height: 340px; }
+/* 画面が広いほどグラフを高くする（大画面で文字を読みやすく） */
+@media (min-width: 1200px) { .chart-wrap-stack { height: 500px !important; } }
+@media (min-width: 1600px) { .chart-wrap-stack { height: 580px !important; } }
 
 table.ranking {
   width: 100%;
@@ -218,7 +223,7 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
 
       <div class="card">
         <h2>メンバー別・業務内訳</h2>
-        <div class="chart-wrap" style="height:420px;"><canvas id="stackChart"></canvas></div>
+        <div class="chart-wrap chart-wrap-stack" style="height:420px;"><canvas id="stackChart"></canvas></div>
       </div>
 
       <div class="card">
@@ -253,7 +258,7 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
     <input type="file" id="fileInput" accept=".csv">
   </label>
 
-  <div class="footer">株式会社Ace / zaitaku-matome v2.6</div>
+  <div class="footer">株式会社Ace / zaitaku-matome v2.7</div>
 </div>
 
 <script>
@@ -528,18 +533,25 @@ function renderStackChart(memberCatTable, memberTotals) {
       plugins: {
         legend: {
           position: 'bottom',
-          labels: { padding: 14, usePointStyle: true, pointStyle: 'rect', boxWidth: 14, boxHeight: 14, font: { size: 12 } }
+          labels: {
+            padding: 14,
+            usePointStyle: true,
+            pointStyle: 'rect',
+            boxWidth: 14,
+            boxHeight: 14,
+            font: ctx => ({ size: getResponsiveFontSize(ctx.chart, 'legend') })
+          }
         },
         datalabels: {
           // 白文字＋黒縁取りでどの背景色でも視認性確保
           color: '#fff',
           textStrokeColor: '#000',
-          textStrokeWidth: 3,
-          font: {
+          textStrokeWidth: ctx => Math.max(3, Math.round(getResponsiveFontSize(ctx.chart, 'data') / 5)),
+          font: ctx => ({
             family: "'Noto Sans JP', sans-serif",
             weight: '700',
-            size: 12
-          },
+            size: getResponsiveFontSize(ctx.chart, 'data')
+          }),
           textAlign: 'center',
           formatter: (v, ctx) => {
             if (v < 0.5) return '';                              // 0.5h未満は表示しない
@@ -548,9 +560,32 @@ function renderStackChart(memberCatTable, memberTotals) {
           }
         }
       },
-      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#edf2f7' } } }
+      scales: {
+        x: {
+          stacked: true,
+          grid: { display: false },
+          ticks: { font: ctx => ({ size: getResponsiveFontSize(ctx.chart, 'axis') }) }
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          grid: { color: '#edf2f7' },
+          ticks: { font: ctx => ({ size: getResponsiveFontSize(ctx.chart, 'axis') }) }
+        }
+      }
     }
   });
+}
+
+// グラフ幅に応じてフォントサイズを返す（小さい画面は12px、大きい画面は最大18-20px）
+function getResponsiveFontSize(chart, type) {
+  const width = chart.width || 800;
+  // 800px基準で12px、1600pxで上限に到達するイメージ
+  const ratio = Math.min(Math.max(width / 800, 1), 2);
+  if (type === 'data') return Math.round(12 * ratio); // 12 → 24px
+  if (type === 'legend') return Math.round(12 * Math.min(ratio, 1.4)); // 12 → 17px
+  if (type === 'axis') return Math.round(11 * Math.min(ratio, 1.5)); // 11 → 16px
+  return 12;
 }
 
 function renderEfficiencyTable(stats) {
