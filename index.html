@@ -258,7 +258,7 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
     <input type="file" id="fileInput" accept=".csv">
   </label>
 
-  <div class="footer">株式会社Ace / zaitaku-matome v2.7</div>
+  <div class="footer">株式会社Ace / zaitaku-matome v2.9</div>
 </div>
 
 <script>
@@ -280,6 +280,10 @@ const CATEGORY_COLORS = {
   'HP':          '#4DD0E1', // 水色
   'その他':       '#9E9E9E'  // 灰色
 };
+
+// 在宅メンバー固定リスト（CSVに該当データがなくても全員棒グラフに表示する）
+// 並び順は「稼働時間が同点だった場合のタイブレーク順」を兼ねる
+const FIXED_MEMBERS = ['江口','赤間','増田','服部','板東'];
 
 const uploadZone = document.getElementById('uploadZone');
 const fileInput = document.getElementById('fileInput');
@@ -316,7 +320,15 @@ function parseCSV(text, filename) {
   }
   // グローバル保存（日付切替で再集計するため）
   window.__allRows = allRows;
-  window.__allMembers = [...new Set(allRows.map(r => r['名前']).filter(Boolean))];
+  // FIXED_MEMBERSの苗字に該当するCSV内の氏名を採用、無ければ苗字そのものをキー化
+  // （CSVに登場しない江口・増田なども必ず5名分の枠を確保するため）
+  const csvMembers = [...new Set(allRows.map(r => r['名前']).filter(Boolean))];
+  const surnameMap = {};
+  csvMembers.forEach(n => {
+    const s = shortName(n);
+    if (FIXED_MEMBERS.includes(s) && !surnameMap[s]) surnameMap[s] = n;
+  });
+  window.__allMembers = FIXED_MEMBERS.map(s => surnameMap[s] || s);
   // デフォルト日付：前営業日（today未満で最新）
   const defaultDate = pickPreviousBusinessDay(allRows);
   if (!defaultDate) {
@@ -458,6 +470,8 @@ function analyze(rows, allMembers) {
 
   rows.forEach(r => {
     const name = r['名前'];
+    // FIXED_MEMBERS外のメンバーは集計対象外（5名固定）
+    if (!FIXED_MEMBERS.includes(shortName(name))) return;
     const hours = parseFloat(r['稼働時間']) || 0;
     dates.add(r['日付']);
     memberTotals[name] = (memberTotals[name] || 0) + hours;
@@ -509,8 +523,12 @@ function renderSummary(rows) {
 let charts = {};
 
 function renderStackChart(memberCatTable, memberTotals) {
-  // メンバーを稼働時間が多い順にソート（稼働なしの人も末尾に表示）
-  const members = Object.keys(memberCatTable).sort((a, b) => (memberTotals[b] || 0) - (memberTotals[a] || 0));
+  // 稼働時間の長い順（降順）。同点時はFIXED_MEMBERSの記載順をタイブレークに使用
+  const members = Object.keys(memberCatTable).sort((a, b) => {
+    const diff = (memberTotals[b] || 0) - (memberTotals[a] || 0);
+    if (diff !== 0) return diff;
+    return FIXED_MEMBERS.indexOf(shortName(a)) - FIXED_MEMBERS.indexOf(shortName(b));
+  });
   // 苗字のみ表示。稼働ゼロのメンバーは「(稼働なし)」を改行で添える
   const labels = members.map(m => (memberTotals[m] || 0) === 0 ? [shortName(m), '(稼働なし)'] : shortName(m));
 
