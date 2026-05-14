@@ -58,6 +58,34 @@ header::after {
 header h1 { font-size: 26px; font-weight: 500; margin-bottom: 6px; color: var(--g-gray-900); letter-spacing: -0.01em; }
 header p { font-size: 14px; color: var(--g-gray-500); }
 
+.kintone-zone {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 16px 24px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(60,64,67,0.04);
+  border-left: 4px solid var(--g-green);
+}
+.kintone-btn {
+  background: var(--g-blue);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.kintone-btn:hover { background: var(--g-blue-dark); }
+.kintone-btn:disabled { background: var(--g-gray-300); cursor: not-allowed; }
+.kintone-status { font-size: 13px; color: var(--g-gray-500); }
+
 .upload-zone {
   display: block;
   background: white;
@@ -250,6 +278,12 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
     <button class="screenshot-btn" id="screenshotBtn">📸 スクショをコピー</button>
   </div>
 
+  <!-- kintone連携ゾーン（スクショ対象外） -->
+  <div class="kintone-zone">
+    <button id="kintoneFetchBtn" class="kintone-btn">🔄 kintoneから最新取得</button>
+    <span id="kintoneStatus" class="kintone-status">ボタンを押すと最新データを取得します</span>
+  </div>
+
   <!-- CSV読み込みゾーン（スクショ対象外） -->
   <label class="upload-zone" id="uploadZone">
     <div class="upload-icon">📁</div>
@@ -258,7 +292,7 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
     <input type="file" id="fileInput" accept=".csv">
   </label>
 
-  <div class="footer">株式会社Ace / zaitaku-matome v2.9</div>
+  <div class="footer">株式会社Ace / zaitaku-matome v3.0</div>
 </div>
 
 <script>
@@ -287,6 +321,35 @@ const FIXED_MEMBERS = ['江口','赤間','増田','服部','板東'];
 
 const uploadZone = document.getElementById('uploadZone');
 const fileInput = document.getElementById('fileInput');
+
+// ============================================================
+// kintone連携：GASにfetchしてCSVを取得し、既存parseCSV()に流し込む
+// ============================================================
+const KINTONE_GAS_URL = 'https://script.google.com/macros/s/AKfycbwSpsAE7wXq_f6Yi0oQzOGRsHbCLoHgkHXR1YRCmn49N039MTDB49uLpLQf6m6hJ4SX/exec';
+
+const kintoneBtn = document.getElementById('kintoneFetchBtn');
+const kintoneStatus = document.getElementById('kintoneStatus');
+
+kintoneBtn.addEventListener('click', async () => {
+  kintoneBtn.disabled = true;
+  kintoneStatus.textContent = '🔄 kintoneから読み込み中...';
+  try {
+    const res = await fetch(KINTONE_GAS_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const csv = await res.text();
+    if (csv.startsWith('Error:')) throw new Error(csv);
+    parseCSV(csv, 'kintone最新データ');
+    const now = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    kintoneStatus.textContent = '✅ ' + now + ' に最新化完了';
+    uploadZone.classList.add('has-file');
+    uploadZone.querySelector('.upload-text').innerHTML = '<strong>✅ kintone最新データ</strong> 読込完了';
+  } catch (err) {
+    kintoneStatus.textContent = '❌ エラー：' + err.message;
+    alert('kintoneからの取得に失敗しました。\n' + err.message);
+  } finally {
+    kintoneBtn.disabled = false;
+  }
+});
 
 uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
