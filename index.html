@@ -317,7 +317,7 @@ const CATEGORY_COLORS = {
 
 // 在宅メンバー固定リスト（CSVに該当データがなくても全員棒グラフに表示する）
 // 並び順は「稼働時間が同点だった場合のタイブレーク順」を兼ねる
-const FIXED_MEMBERS = ['江口','赤間','増田','服部','板東'];
+const FIXED_MEMBERS = ['江口','赤間','増田','服部','板東','坂田'];
 
 const uploadZone = document.getElementById('uploadZone');
 const fileInput = document.getElementById('fileInput');
@@ -533,7 +533,7 @@ function analyze(rows, allMembers) {
 
   rows.forEach(r => {
     const name = r['名前'];
-    // FIXED_MEMBERS外のメンバーは集計対象外（5名固定）
+    // FIXED_MEMBERS外のメンバーは集計対象外（6名固定）
     if (!FIXED_MEMBERS.includes(shortName(name))) return;
     const hours = parseFloat(r['稼働時間']) || 0;
     dates.add(r['日付']);
