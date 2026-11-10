@@ -292,7 +292,7 @@ table.ranking td.num { font-variant-numeric: tabular-nums; font-weight: 500; col
     <input type="file" id="fileInput" accept=".csv">
   </label>
 
-  <div class="footer">株式会社Ace / zaitaku-matome v3.0</div>
+  <div class="footer">株式会社Ace / zaitaku-matome v3.1</div>
 </div>
 
 <script>
@@ -317,7 +317,7 @@ const CATEGORY_COLORS = {
 
 // 在宅メンバー固定リスト（CSVに該当データがなくても全員棒グラフに表示する）
 // 並び順は「稼働時間が同点だった場合のタイブレーク順」を兼ねる
-const FIXED_MEMBERS = ['江口','赤間','増田','服部','板東','坂田','千葉'];
+const FIXED_MEMBERS = ['江口','赤間','増田','服部','板東','坂田','千葉','小林'];
 
 const uploadZone = document.getElementById('uploadZone');
 const fileInput = document.getElementById('fileInput');
@@ -543,6 +543,7 @@ function analyze(rows, allMembers) {
     memberCatTable[name] = memberCatTable[name] || {};
     postingStats[name] = postingStats[name] || { hours: 0, storeCount: 0 };
 
+    if (hours > 0 && !cats.some(c => c.hours > 0)) cats.push({ name: 'その他', hours: hours, items: [] });
     cats.forEach(c => {
       catTotals[c.name] = (catTotals[c.name] || 0) + c.hours;
       memberCatTable[name][c.name] = (memberCatTable[name][c.name] || 0) + c.hours;
